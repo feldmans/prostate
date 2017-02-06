@@ -16,7 +16,11 @@ roc <- roc[,c(1,8,2:7,10)]
 
 saveRDS(roc,"data/roc_sextant.rds")
 
+#TABLEAUX PRINCIPAUX (calculs de se sp)
 #recreation des tableaux lobe, sextant, patient à partir de roc_sextant
+
+#tableau sextant
+#deja cree
 
 #tableau lobe
 roc_lobe <- data.frame(roc %>% group_by(patient,lobeD) %>% select(4:9) %>% summarise_each(funs(max(.,na.rm=T))))
@@ -25,6 +29,8 @@ saveRDS(roc_lobe,"data/roc_lobe.rds")
 #tableau patient
 roc_pat <- data.frame(roc %>% group_by(patient) %>% select(4:9) %>% summarise_each(funs(max(.,na.rm=T))))
 saveRDS(roc_pat,"data/roc_pat.rds")
+
+
 
 
 

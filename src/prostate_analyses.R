@@ -60,20 +60,20 @@ roc1 <- roc[roc$taille_IRM>=10 & !is.na(roc$taille_IRM), ]
 roc2 <- roc_lobe[roc_lobe$taille_IRM>=10 & !is.na(roc_lobe$taille_IRM), ]
 roc3 <- roc_pat[roc_pat$taille_IRM>=10 & !is.na(roc_pat$taille_IRM), ]
 
-#2-Calcul Se_sp
+#2-Calcul Se_sp et comparaison Se DCE0/DCE1
 #sextant
-rocbis <- get_threshold(roc1)
-sespbis <- lapply(3:4, function(x) compute_se_sp(rocbis, seuil=x, unit="sextant", R=1000, type="bca")) #bca marche avec R=1000 mais pas 100
+sespbis <- lapply(3:4, function(x) compute_se_sp(roc1, seuil=x, unit="sextant", R=1000, type="bca")) #bca marche avec R=1000 mais pas 100
 sespsext <- do.call(rbind,sespbis)
 #lobe
-rocbis <- get_threshold(roc2)
-sespbis <- lapply(3:4, function(x) compute_se_sp (rocbis, seuil=x, unit="lobe", R=1000, type="bca"))
+sespbis <- lapply(3:4, function(x) compute_se_sp (roc2, seuil=x, unit="lobe", R=1000, type="bca"))
 sesplobe <- do.call(rbind,sespbis)
 #pat
-rocbis <- get_threshold(roc3)
-sespbis <- lapply(3:4, function(x) compute_se_sp (rocbis, seuil=x, unit="patient", R=1000, type="bca"))
+sespbis <- lapply(3:4, function(x) compute_se_sp (roc3, seuil=x, unit="patient", R=1000, type="bca"))
 sesppat <- do.call(rbind,sespbis)
 write.table(print(rbind(sespsext,sesplobe,sesppat)),file="clipboard",sep="\t", row.names=F)
+
+
+
 
 
 

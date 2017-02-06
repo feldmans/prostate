@@ -12,7 +12,12 @@ get_threshold <- function(.roc){
 }
 
 compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
-  roc2 <- data.frame(.roc)
+  roc2 <- data.frame(get_threshold(.roc))
+  
+  vary <- data.frame(DCE1=paste0(c("AL","RP","AL","RP"),rep(c("_DCE1_3", "_DCE1_4"), each=2)), DCE0=paste0(c("AL","RP","AL","RP"),rep(c("_DCE0_3", "_DCE0_4"), each=2)))
+  #vary <- apply(vary,2, as.character)
+  #roc2 <- data.frame(.roc)
+  
   #selection des colonnes "dépassement du seuil oui ou non"
   col_to_test <- colnames(roc2)[grep(seuil, colnames(roc2))] #"RP_DCE0_4" a tiret en 2e position en partant de la fin
   #pour chacune de ces colonnes, calcul se sp en comparant avec ADK_histo
@@ -53,10 +58,19 @@ compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
       if (length(obj)==0) obj <- 0
       assign(i, obj)
     }
+    #browser()
+    if (str_sub(x, 7, 7)=="0") {
+      fisher <- ""
+      mcnemar <- ""
+    } else {
+      tab <- data.frame(t(test_SE_DCE (juge_DCE1_seuil=x, juge_DCE0_seuil=as.character(vary[vary$DCE1==x, 2]), .roc)))
+      fisher <- tab$fisher
+      mcnemar <- tab$mcnemar
+    }
     
     #if(x=="AL_DCE0_3")browser()
     #.df <- cbind(N, se_CI, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","sp_CI", "M-S-", "M-S+", "M+S-", "M+S+") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
-    .df <- cbind(N, se_CI, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","sp_CI", "nM0S0", "nM0S1", "nM1S0", "nM1S1") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
+    .df <- cbind(N, se_CI, fisher, mcnemar, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","fisher","mcnemar", "sp_CI", "nM0S0", "nM0S1", "nM1S0", "nM1S1") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
     return(.df)
   })
   #browser()
@@ -69,8 +83,10 @@ compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
   sesp$seuil <- str_sub(sesp$mesure, -1, -1)
   sesp$juge <- str_sub(sesp$mesure, 1, 2)
   
+  
   #sesp <- sesp[ ,c(4,6,7,5,2:3)]
-  sesp <- sesp[ ,c(9:12,2:8)]
+  sesp <- sesp[ ,c(11:14,2:10)]
+  rownames(sesp) <- NULL
   return(sesp)
 }
 
@@ -191,4 +207,25 @@ BootseCi <- function(tmp, mes, R, type)  { #type="bca" ou "perc"
   if(mes=="sp").ans <- data.frame (Sp_CI=paste0 (.ans$est*100, "% [", .ans$CI_L*100, "%-", .ans$CI_U*100, "%]")) #met en forme les valeurs
   .ans <- as.vector(.ans)
   return (.ans)
+}
+
+#comparaison de sensibilité, DCE vs pas de DCE
+test_SE_DCE <- function(juge_DCE1_seuil, juge_DCE0_seuil, data){
+  rocbis <- data
+  rocbis <- get_threshold(rocbis)
+  comp <- rocbis[rocbis$ADK_histo==1, c(juge_DCE1_seuil, juge_DCE0_seuil)] 
+  comp <- data.frame(signe=c(comp[,1], comp[,2]))
+  comp$DCE <- c(rep(1, nrow(rocbis[ rocbis$ADK_histo==1, ])), rep(0, nrow(rocbis[ rocbis$ADK_histo==1, ])))
+  if (sum(dim(table(comp))) < 4) {
+    #print("pb")
+    pvalft <- NA
+    pvalmt <- NA
+  } else {
+    ft <- fisher.test(comp$signe,comp$DCE)
+    pvalft <- round(ft$p.value, 3)
+    mt <- mcnemar.test(table(comp))
+    pvalmt <- round(mt$p.value,3)
+  }
+  df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), fisher = pvalft, mcnemar = pvalmt)
+  return(df)
 }
