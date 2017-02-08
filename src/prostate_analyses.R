@@ -61,50 +61,59 @@ roc2 <- roc_lobe[roc_lobe$taille_IRM>=10 & !is.na(roc_lobe$taille_IRM), ]
 roc3 <- roc_pat[roc_pat$taille_IRM>=10 & !is.na(roc_pat$taille_IRM), ]
 
 #2-Calcul Se_sp et comparaison Se DCE0/DCE1
-#sextant
-sespbis <- lapply(3:4, function(x) compute_se_sp(roc1, seuil=x, unit="sextant", R=1000, type="bca")) #bca marche avec R=1000 mais pas 100
-sespsext <- do.call(rbind,sespbis)
-#lobe
-sespbis <- lapply(3:4, function(x) compute_se_sp (roc2, seuil=x, unit="lobe", R=1000, type="bca"))
-sesplobe <- do.call(rbind,sespbis)
-#pat
-sespbis <- lapply(3:4, function(x) compute_se_sp (roc3, seuil=x, unit="patient", R=1000, type="bca"))
-sesppat <- do.call(rbind,sespbis)
-write.table(print(rbind(sespsext,sesplobe,sesppat)),file="clipboard",sep="\t", row.names=F)
+
+for (i in 1:3){
+  .l <- lapply(c(3:4), function(seuil){
+    res <- compute_se_sp(.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  sesp <- if (i==1) .l else rbind(sesp, .l)
+}
+sesp <- sesp %>% select(-N)
+write.table(print(sesp),file="clipboard",sep="\t", row.names=F)
+
+# #sextant
+# sespbis <- lapply(3:4, function(x) compute_se_sp(roc1, seuil=x, unit="sextant", R=1000, type="bca")) #bca marche avec R=1000 mais pas 100
+# sespsext <- do.call(rbind,sespbis)
+# #lobe
+# sespbis <- lapply(3:4, function(x) compute_se_sp (roc2, seuil=x, unit="lobe", R=1000, type="bca"))
+# sesplobe <- do.call(rbind,sespbis)
+# #pat
+# sespbis <- lapply(3:4, function(x) compute_se_sp (roc3, seuil=x, unit="patient", R=1000, type="bca"))
+# sesppat <- do.call(rbind,sespbis)
+# write.table(print(rbind(sespsext,sesplobe,sesppat)),file="clipboard",sep="\t", row.names=F)
 
 
 
 
 
 
+#3-Cohen's Kappa
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3){
+  .l <- lapply(c(3:4), function(seuil){
+    res <- get_kappa_CI_conc (.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  kappa_tot <- if (i==1) .l else rbind(kappa_tot, .l)
+}
+write.table(print(kappa_tot),file="clipboard",sep="\t", row.names=F)
 
 
-#kappa
-#sextant
-
-data(expsy)
-ckappa(expsy[,c(12,14)])          # Cohen's kappa for binary diagnosis
-#to obtain a 95%confidence interval:
-#library(boot)
-#ckappa.boot <- function(data,x) {ckappa(data[x,])[[2]]}
-#res <- boot(expsy[,c(12,14)],ckappa.boot,1000)
-#quantile(res$t,c(0.025,0.975))    # two-sided bootstrapped confidence interval of kappa
-#boot.ci(res,type="bca")         # adjusted bootstrap percentile (BCa) confidence interval (better)
-#ckappa(expsy[,c(11,13)])          #Cohen's kappa for non binary diagnosis
-
-
-#pstat
-
-head(pstat)
-table(table(pstat$patient)) #37 patients, tous ont info pour les 2 lobes 
-table(table(pstat$Lobe))
-pstat$LG_pos <- ifelse(pstat$Lobe=="G" & pstat$BP_positives==1,1,0)
-pstat$LD_pos <- ifelse(pstat$Lobe=="D" & pstat$BP_positives==1,1,0)
-tmp <- pstat[,c("patient","LG_pos","LD_pos")]
-tmp2 <- tmp %>% group_by(patient) %>% summarise(LG_pos = max(LG_pos), LD_pos = max(LD_pos))
-table(tmp2$LD_pos) #12 patients ont biopsie droitpositive
-table(tmp2$LG_pos) #20 patients ont biopsie gauche positive
-table(tmp2$LG_pos==1 & tmp2$LD_pos==1) #5patients sont positif pour lobe gauche et lobe droit
-
+# #pstat
+# 
+# head(pstat)
+# table(table(pstat$patient)) #37 patients, tous ont info pour les 2 lobes 
+# table(table(pstat$Lobe))
+# pstat$LG_pos <- ifelse(pstat$Lobe=="G" & pstat$BP_positives==1,1,0)
+# pstat$LD_pos <- ifelse(pstat$Lobe=="D" & pstat$BP_positives==1,1,0)
+# tmp <- pstat[,c("patient","LG_pos","LD_pos")]
+# tmp2 <- tmp %>% group_by(patient) %>% summarise(LG_pos = max(LG_pos), LD_pos = max(LD_pos))
+# table(tmp2$LD_pos) #12 patients ont biopsie droitpositive
+# table(tmp2$LG_pos) #20 patients ont biopsie gauche positive
+# table(tmp2$LG_pos==1 & tmp2$LD_pos==1) #5patients sont positif pour lobe gauche et lobe droit
+# 
 
 

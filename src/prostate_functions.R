@@ -48,10 +48,10 @@ compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
     N <- nrow(tmp)
     #return(c(se,sp))
     #browser()
-    nM0S0 <- tab[rownames(tab)==0 , colnames(tab)==0]
-    nM0S1 <- tab[rownames(tab)==1 , colnames(tab)==0]
-    nM1S0 <- tab[rownames(tab)==0 , colnames(tab)==1]
-    nM1S1 <- tab[rownames(tab)==1 , colnames(tab)==1]
+    nM0S0 <- tab[rownames(tab)==0, colnames(tab)==0]
+    nM0S1 <- tab[rownames(tab)==1, colnames(tab)==0]
+    nM1S0 <- tab[rownames(tab)==0, colnames(tab)==1]
+    nM1S1 <- tab[rownames(tab)==1, colnames(tab)==1]
     for (i in c("nM0S0",  "nM0S1", "nM1S0", "nM1S1")){
     #lapply(c(nM0S0,  nM0S1, nM1S0, nM1S1), function(i){
       obj <- get(i)
@@ -60,20 +60,29 @@ compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
     }
     #browser()
     if (str_sub(x, 7, 7)=="0") {
-      fisher <- ""
-      mcnemar <- ""
+      fisher.se <- ""
+      mcnemar.se <- ""
+      fisher.sp <- ""
+      mcnemar.sp <- ""
     } else {
-      tab <- data.frame(t(test_SE_DCE (juge_DCE1_seuil=x, juge_DCE0_seuil=as.character(vary[vary$DCE1==x, 2]), .roc)))
-      fisher <- tab$fisher
-      mcnemar <- tab$mcnemar
+      tab.se <- data.frame(t(test_SE_DCE(juge_DCE1_seuil=x, juge_DCE0_seuil=as.character(vary[vary$DCE1==x, 2]), .roc)), stringsAsFactors = FALSE)
+      fisher.se <- tab.se$fisher
+      mcnemar.se <- tab.se$mcnemar
+      #browser()
+      tab.sp <- data.frame(t(test_SP_DCE(juge_DCE1_seuil=x, juge_DCE0_seuil=as.character(vary[vary$DCE1==x, 2]), .roc)), stringsAsFactors = FALSE)
+      fisher.sp <- tab.sp$fisher
+      mcnemar.sp <- tab.sp$mcnemar
     }
     
-    #if(x=="AL_DCE0_3")browser()
+    #if(x=="AL_DCE0_3" & unit =="patient")browser()
     #.df <- cbind(N, se_CI, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","sp_CI", "M-S-", "M-S+", "M+S-", "M+S+") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
-    .df <- cbind(N, se_CI, fisher, mcnemar, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","fisher","mcnemar", "sp_CI", "nM0S0", "nM0S1", "nM1S0", "nM1S1") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
+    #.df <- cbind(N, se_CI, fisher, mcnemar, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","fisher","mcnemar", "sp_CI", "nM0S0", "nM0S1", "nM1S0", "nM1S1") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
+    #if (str_sub(x, 7, 7)=="0")browser()
+    .df <- cbind(nM0S0, nM0S1, nM1S0, nM1S1, N, se_CI, sp_CI, fisher.se, mcnemar.se, fisher.sp, mcnemar.sp) ; colnames(.df) <- c("VN", "FP", "FN", "VP", "N", "se_CI", "sp_CI", "fisher.se", "mcnemar.se", "fisher.sp", "mcnemar.sp") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
+    .df <- data.frame(.df,stringsAsFactors = FALSE)
     return(.df)
   })
-  #browser()
+  #if (unit=="patient")browser()
   se_sp <- do.call(rbind, se_sp)
   #chaque liste/ligne est une colonne "dépassement du seuil oui ou non" qui nous donne dans le nom de la colonne DCE, seuil et juge.
   #sesp <- data.frame(mesure = col_to_test, N = se_sp[ , 1], Se = se_sp[ , 2], Sp = se_sp[ , 3])
@@ -83,9 +92,9 @@ compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
   sesp$seuil <- str_sub(sesp$mesure, -1, -1)
   sesp$juge <- str_sub(sesp$mesure, 1, 2)
   
-  
+  #browser()
   #sesp <- sesp[ ,c(4,6,7,5,2:3)]
-  sesp <- sesp[ ,c(11:14,2:10)]
+  sesp <- sesp[ ,c(13:16,2:12)]
   rownames(sesp) <- NULL
   return(sesp)
 }
@@ -188,7 +197,11 @@ bootse<- function (tmp, mes, R)  {    #x = "1":6 ou x="tot"
 
 BootseCi <- function(tmp, mes, R, type)  { #type="bca" ou "perc"
   .bootres <- bootse (tmp=tmp, mes, R=R)
-  if (all(na.omit(.bootres$t)==na.omit(.bootres$t)[1])) return(NA)
+  if (all(na.omit(.bootres$t)==na.omit(.bootres$t)[1])) return(paste0(as.numeric (.bootres$t0), "[ND]"))
+  #si bug, décommenter ligne ci dessous
+  #if (all(na.omit(.bootres$t)==na.omit(.bootres$t)[1])) return(NA)
+  
+  
   .n <- length (.bootres$t0) #donne le nombre de resultat boot realise : 1 pour internet, 1 pour telephone
   .list.ci <- lapply(1:.n, function(x) boot.ci(.bootres,index=x,type=type)) #fct boot.ci : intervalle de confiance pour chaque boot
   if (type=="perc") type2 <- "percent" 
@@ -229,3 +242,115 @@ test_SE_DCE <- function(juge_DCE1_seuil, juge_DCE0_seuil, data){
   df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), fisher = pvalft, mcnemar = pvalmt)
   return(df)
 }
+
+#comparaison de spécificité, DCE vs pas de DCE
+test_SP_DCE <- function(juge_DCE1_seuil, juge_DCE0_seuil, data){
+  rocbis <- data
+  rocbis <- get_threshold(rocbis)
+  comp <- rocbis[rocbis$ADK_histo==0, c(juge_DCE1_seuil, juge_DCE0_seuil)] 
+  #browser()
+  comp <- data.frame(signe=c(comp[,1], comp[,2]))
+  comp$DCE <- c(rep(1, nrow(rocbis[ rocbis$ADK_histo==0, ])), rep(0, nrow(rocbis[ rocbis$ADK_histo==0, ])))
+  if (sum(dim(table(comp))) < 4) {
+    #print("pb")
+    pvalft <- NA
+    pvalmt <- NA
+  } else {
+    ft <- fisher.test(comp$signe,comp$DCE)
+    pvalft <- round(ft$p.value, 3)
+    mt <- mcnemar.test(table(comp))
+    pvalmt <- round(mt$p.value,3)
+  }
+  df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), fisher = pvalft, mcnemar = pvalmt)
+  return(df)
+}
+
+
+#KAPPA
+
+get_kappa_CI_conc <- function (.roc, seuil, unit, R=1000, type="bca"){
+  roc2 <- data.frame(get_threshold(.roc))
+  for (i in c(0,1)){ #pour DCE0 puis pour DCE1
+    #browser()
+    AL <- paste0("AL_DCE",i,"_",seuil)
+    RP <- paste0("RP_DCE",i,"_",seuil)
+    print(paste(seuil,unit,i))
+    #if(seuil==3 & unit=="lobe" & i==1) browser()
+    tmp <- roc2[ ,c(AL, RP)]
+    kappa <- ckappa.cmarge(tmp) 
+    K_CI <- if (is.na(kappa$kappa))  paste0("NA [NA]") else bootkapa.ci (tmp, R, type="bca")
+    conc_marge <- kappa$conc.marge
+    df <- data.frame (juge1 = AL, juge2 = RP, kappa = K_CI, concordance_marge = conc_marge)
+    colnames(df) <- c("juge1","juge2","Kappa[95%CI]","concordance des marges")
+    res <- if (i==0) df else rbind(res, df)
+  }
+  res$unit <- unit
+  res$seuil <- seuil
+  res$DCE <- str_sub(res$juge1, -3,-3)
+  res <- res[ ,c(5:7,3,4)]
+  #browser()
+  return(res)
+}
+
+ckappa.cmarge <- function (r) {
+  r <- na.omit(r)
+  r1 <- r[, 1]
+  r2 <- r[, 2]
+  n1 <- as.character(r1)
+  n2 <- as.character(r2)
+  lev <- levels(as.factor(c(n1, n2)))
+  p <- length(lev)
+  tab <- matrix(nrow = p, ncol = p)
+  dimnames(tab) <- list(levels(as.factor(c(n1, n2))), levels(as.factor(c(n1, 
+                                                                         n2))))
+  dim1 <- dimnames(tab)[[1]]
+  dim2 <- dimnames(tab)[[2]]
+  tabi <- table(n1, n2)
+  dimi1 <- dimnames(tabi)[[1]]
+  dimi2 <- dimnames(tabi)[[2]]
+  for (i in 1:p) for (j in 1:p) {
+    if ((sum(dim1[i] == dimi1) == 1) & (sum(dim2[j] == dimi2) == 
+                                        1)) 
+      tab[i, j] <- tabi[dim1[i], dim2[j]]
+    else tab[i, j] <- 0
+  }
+  tsum <- sum(tab)
+  ttab <- tab/tsum
+  tm1 <- apply(ttab, 1, sum)
+  tm2 <- apply(ttab, 2, sum)
+  agreeP <- sum(diag(ttab))
+  chanceP <- sum(tm1 * tm2)
+  kappa2 <- (agreeP - chanceP)/(1 - chanceP)
+  
+  PM0n1 <- tm2[1]
+  PM1n1 <- tm2[2]
+  PM0n2 <- tm1[1]
+  PM1n2 <- tm1[2]
+  cond <- (as.numeric(PM0n1-PM1n1)>0) == (as.numeric(PM0n2-PM1n2)>0)
+  
+  
+  result <- list(table = tab, kappa = kappa2, conc.marge = cond)
+  result
+}
+
+
+bootkapa.ci <- function(tmp, R=1000, type) {
+  #browser()
+  .bootres <- boot(data=tmp, ckappa.boot, R)
+  .n <- length (.bootres$t0)
+  if (all(na.omit(.bootres$t)==na.omit(.bootres$t)[1])) return(paste0(as.numeric (.bootres$t0), "[ND]"))
+  .list.ci <- lapply(1:.n, function(x) boot.ci(.bootres,index=x,type=type))
+  if (type=="perc") type2 <- "percent" 
+  else type2 <- type
+  .res <- data.frame (t (sapply (.list.ci, function (x) x[[type2]][4:5]))) #selectionne les valeur de IC
+  rownames (.res) <- names (.bootres$t0)
+  colnames (.res) <- c ("CI_L", "CI_U")
+  .res$est <- as.numeric (.bootres$t0)
+  .res$n <- nrow(tmp)
+  .res <- .res[, c (4,3, 1, 2)]
+  .ans <- round (.res, 2) #fait un arrondi sur chaque valeur
+  .ans <- data.frame (Kappa_CI=paste0 (.ans$est, " [", .ans$CI_L, " - ", .ans$CI_U, "]"))
+  .ans <- as.vector(.ans)
+  return(.ans)
+}
+
