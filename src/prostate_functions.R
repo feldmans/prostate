@@ -60,25 +60,26 @@ compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
     }
     #browser()
     if (str_sub(x, 7, 7)=="0") {
-      fisher.se <- ""
+      #fisher.se <- ""
       mcnemar.se <- ""
-      fisher.sp <- ""
+      #fisher.sp <- ""
       mcnemar.sp <- ""
     } else {
       tab.se <- data.frame(t(test_SE_DCE(juge_DCE1_seuil=x, juge_DCE0_seuil=as.character(vary[vary$DCE1==x, 2]), .roc)), stringsAsFactors = FALSE)
-      fisher.se <- tab.se$fisher
+      #fisher.se <- tab.se$fisher
       mcnemar.se <- tab.se$mcnemar
-      #browser()
       tab.sp <- data.frame(t(test_SP_DCE(juge_DCE1_seuil=x, juge_DCE0_seuil=as.character(vary[vary$DCE1==x, 2]), .roc)), stringsAsFactors = FALSE)
-      fisher.sp <- tab.sp$fisher
+      #fisher.sp <- tab.sp$fisher
       mcnemar.sp <- tab.sp$mcnemar
+      #browser()
     }
     
     #if(x=="AL_DCE0_3" & unit =="patient")browser()
     #.df <- cbind(N, se_CI, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","sp_CI", "M-S-", "M-S+", "M+S-", "M+S+") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
     #.df <- cbind(N, se_CI, fisher, mcnemar, sp_CI, nM0S0, nM0S1, nM1S0, nM1S1) ; colnames(.df) <- c("N","se_CI","fisher","mcnemar", "sp_CI", "nM0S0", "nM0S1", "nM1S0", "nM1S1") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
     #if (str_sub(x, 7, 7)=="0")browser()
-    .df <- cbind(nM0S0, nM0S1, nM1S0, nM1S1, N, se_CI, sp_CI, fisher.se, mcnemar.se, fisher.sp, mcnemar.sp) ; colnames(.df) <- c("VN", "FP", "FN", "VP", "N", "se_CI", "sp_CI", "fisher.se", "mcnemar.se", "fisher.sp", "mcnemar.sp") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
+    #.df <- cbind(nM0S0, nM0S1, nM1S0, nM1S1, N, se_CI, sp_CI, fisher.se, mcnemar.se, fisher.sp, mcnemar.sp) ; colnames(.df) <- c("VN", "FP", "FN", "VP", "N", "se_CI", "sp_CI", "fisher.se", "mcnemar.se", "fisher.sp", "mcnemar.sp") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
+    .df <- cbind(nM0S0, nM0S1, nM1S0, nM1S1, N, se_CI, sp_CI, mcnemar.se, mcnemar.sp) ; colnames(.df) <- c("VN", "FP", "FN", "VP", "N", "se_CI", "sp_CI", "mcnemar.se", "mcnemar.sp") #obligatoire pour que les NA ait un colnames aussi, sinon rbind impossible
     .df <- data.frame(.df,stringsAsFactors = FALSE)
     return(.df)
   })
@@ -94,7 +95,7 @@ compute_se_sp <- function(.roc, seuil, unit, R=1000, type="bca") {
   
   #browser()
   #sesp <- sesp[ ,c(4,6,7,5,2:3)]
-  sesp <- sesp[ ,c(13:16,2:12)]
+  sesp <- sesp[ ,c(11:14,2:10)]
   rownames(sesp) <- NULL
   return(sesp)
 }
@@ -227,19 +228,21 @@ test_SE_DCE <- function(juge_DCE1_seuil, juge_DCE0_seuil, data){
   rocbis <- data
   rocbis <- get_threshold(rocbis)
   comp <- rocbis[rocbis$ADK_histo==1, c(juge_DCE1_seuil, juge_DCE0_seuil)] 
-  comp <- data.frame(signe=c(comp[,1], comp[,2]))
-  comp$DCE <- c(rep(1, nrow(rocbis[ rocbis$ADK_histo==1, ])), rep(0, nrow(rocbis[ rocbis$ADK_histo==1, ])))
+  #FAUX : ne donne pas concordance entre DCE0 et DCE1
+  # comp <- data.frame(signe=c(comp[,1], comp[,2]))
+  # comp$DCE <- c(rep(1, nrow(rocbis[ rocbis$ADK_histo==1, ])), rep(0, nrow(rocbis[ rocbis$ADK_histo==1, ])))
   if (sum(dim(table(comp))) < 4) {
     #print("pb")
-    pvalft <- NA
+    #pvalft <- NA
     pvalmt <- NA
   } else {
-    ft <- fisher.test(comp$signe,comp$DCE)
-    pvalft <- round(ft$p.value, 3)
+    # ft <- fisher.test(comp$signe,comp$DCE)
+    # pvalft <- round(ft$p.value, 3)
     mt <- mcnemar.test(table(comp))
     pvalmt <- round(mt$p.value,3)
   }
-  df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), fisher = pvalft, mcnemar = pvalmt)
+  #df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), fisher = pvalft, mcnemar = pvalmt)
+  df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), mcnemar = pvalmt)
   return(df)
 }
 
@@ -249,19 +252,21 @@ test_SP_DCE <- function(juge_DCE1_seuil, juge_DCE0_seuil, data){
   rocbis <- get_threshold(rocbis)
   comp <- rocbis[rocbis$ADK_histo==0, c(juge_DCE1_seuil, juge_DCE0_seuil)] 
   #browser()
-  comp <- data.frame(signe=c(comp[,1], comp[,2]))
-  comp$DCE <- c(rep(1, nrow(rocbis[ rocbis$ADK_histo==0, ])), rep(0, nrow(rocbis[ rocbis$ADK_histo==0, ])))
+  #ARCHIFAUX pour le mcnemar, ne donne pas la concordance entre DCE0 et 1, juste une répartition des VN et FP  
+  # comp <- data.frame(signe=c(comp[,1], comp[,2]))
+  # comp$DCE <- c(rep(1, nrow(rocbis[ rocbis$ADK_histo==0, ])), rep(0, nrow(rocbis[ rocbis$ADK_histo==0, ])))
+  
   if (sum(dim(table(comp))) < 4) {
-    #print("pb")
-    pvalft <- NA
+    #pvalft <- NA
     pvalmt <- NA
   } else {
-    ft <- fisher.test(comp$signe,comp$DCE)
-    pvalft <- round(ft$p.value, 3)
+    # ft <- fisher.test(comp$signe,comp$DCE)
+    # pvalft <- round(ft$p.value, 3)
     mt <- mcnemar.test(table(comp))
     pvalmt <- round(mt$p.value,3)
   }
-  df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), fisher = pvalft, mcnemar = pvalmt)
+  #df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), fisher = pvalft, mcnemar = pvalmt)
+  df <- c(juge = str_sub(juge_DCE1_seuil, 1, 2), seuil = str_sub(juge_DCE1_seuil, -1, -1), mcnemar = pvalmt)
   return(df)
 }
 

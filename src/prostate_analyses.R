@@ -61,14 +61,18 @@ roc2 <- roc_lobe[roc_lobe$taille_IRM>=10 & !is.na(roc_lobe$taille_IRM), ]
 roc3 <- roc_pat[roc_pat$taille_IRM>=10 & !is.na(roc_pat$taille_IRM), ]
 
 #2-Calcul Se_sp et comparaison Se DCE0/DCE1
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
 
 for (i in 1:3){
+  
   .l <- lapply(c(3:4), function(seuil){
     res <- compute_se_sp(.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
   })
   .l <- do.call(rbind, .l)
+  
   sesp <- if (i==1) .l else rbind(sesp, .l)
 }
+
 sesp <- sesp %>% select(-N)
 write.table(print(sesp),file="clipboard",sep="\t", row.names=F)
 
@@ -116,4 +120,56 @@ write.table(print(kappa_tot),file="clipboard",sep="\t", row.names=F)
 # table(tmp2$LG_pos==1 & tmp2$LD_pos==1) #5patients sont positif pour lobe gauche et lobe droit
 # 
 
+#4- AUC estimation
+var <- colnames(roc1[-c(1:4,9)])
+
+get_rocobj <- function (data, var1, unit){
+  #browser()
+  tryCatch({
+  print(var1)
+  data$vartmp <- data[,var1]
+  gm1 <- glmer(ADK_histo ~ vartmp + (1 | patient), data = data,
+               family = binomial)
+  # gm1 <- glmer(data$ADK_histo ~ data[ ,var1] + (1 | data$patient),
+  #              family = binomial)
+  p <- as.numeric(predict(gm1, type="response"))
+  if (var1 %in% c("AL_DCE1", "AL_DCE0", "RP_DCE1", "RP_DCE0") & unit!="patient" ) rocobj <- roc(data$ADK_histo, p, smooth=TRUE)
+  else rocobj <- roc(data$ADK_histo, p, smooth=FALSE)
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3) {
+  data_tmp <- get(df[i,"df"])
+  unit <- df[i,"unit"]
+  
+  data_tmp <- get_threshold(data_tmp)
+  data_tmp$patient <- as.character(data_tmp$patient)
+  
+  .l <- lapply(var, function(x) get_rocobj(data=data_tmp, var1=x, unit=unit))
+  
+  if (unit=="patient"){
+    dfAUC <- data.frame(variable=var, 
+                        do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], boot.n=2000, boot.stratified=FALSE)),3))))
+  } else {
+    dfAUC <- data.frame(variable=var, 
+                        do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=2000, boot.stratified=FALSE)),3))))
+  }
+  dfAUC$auc.95CI <- paste0(dfAUC$X2, "[", dfAUC$X1, "-", dfAUC$X3, "]")
+  dfAUC <- dfAUC[,c(1,5)]
+  dfAUC$unit <- unit
+  if (i ==1 ) tab <- dfAUC
+  else tab <- rbind(tab, dfAUC)
+  
+  pdf(paste0("data/AUC_curve",unit,".pdf"))
+  par(mfrow=c(2,2))
+  for (i in 1:length(var)){
+    plot(.l[[i]], main = paste0(var[i],unit))
+  }
+  dev.off()
+}
+
+write.table(print(tab), file="clipboard", sep ="\t")
 
