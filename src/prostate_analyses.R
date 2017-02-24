@@ -173,3 +173,53 @@ for (i in 1:3) {
 
 write.table(print(tab), file="clipboard", sep ="\t")
 
+
+#----------------------
+#Analyse complémentaire
+
+d <- read.csv2("data/BPC_vs_BPST.csv")
+
+d$BPST_lgmax <- as.numeric(as.character(d$BPST_lgmax))
+d$BPC_lgmax <- as.numeric(as.character(d$BPC_lgmax))
+
+table(d$BPST_positif)
+table(d$BPC_positif)
+
+round(prop.table(table(d$BPST_positif)),2)
+round(prop.table(table(d$BPC_positif)),2)
+fisher.test(d$BPST_positif, d$BPC_positif)
+
+wilcox.test(d$BPST_lgmax, d$BPC_lgmax)
+
+xBPST<-d$BPST_lgmax
+xBPC<-d$BPC_lgmax
+
+keep <- c(xBPST,xBPC)
+obs0<- mean(xBPST)
+obs1<- mean(xBPC)
+#diff.obs <- abs(obs0 - obs1)
+diff.obs <- obs0 - obs1
+
+.gpe <- rep(c("gBPST","gBPC"),c(length(xBPST),length(xBPC)))
+
+perm.test<- function(keepIT=keep,.gpe=.gpe){
+  mixgpe <- sample(.gpe,replace = FALSE)
+  g0 <- keepIT[mixgpe=="gBPST"]
+  g1 <- keepIT[mixgpe=="gBPC"]
+  m0<-mean(g0)
+  m1<-mean(g1)
+  #diff<-abs(m0-m1)
+  diff<-m0-m1
+  return(diff)
+}
+
+many.samp<- replicate (100000, perm.test(keep,.gpe))
+
+p.val <-length(many.samp[abs(many.samp)>= abs(diff.obs)]) / length(many.samp)
+
+# #pour tracer courbe
+hist(many.samp,main=paste0("Difference de moyenne ",x))
+abline(v=diff.obs,lwd=2,col=2)
+
+cat(paste0("moyenne longueur carotte BPST = ", round(obs0, 2), "\nmoyenne longueur carotte BPC = ", round(obs1, 2), "\npval test de permutation = ", p.val ))
+cat(sd(xBPST), sd(xBPC))  
