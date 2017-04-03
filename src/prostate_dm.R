@@ -1,12 +1,17 @@
 source("src/prostate_libraries.R")
 
-roc <- read.csv2("data/ROC_sextant.csv")
+roc <- read.csv2("data/ROC_sextant.csv") #premier tableau roc envoyé
+roc_new <- read.csv2("data/tableau_pour_courbr_ROC2_sextant.csv")#tableau envoyé le 16/01/2017 par AL
 microk <- read.csv2("data/microcancer.csv")
 size <- read.csv2("data/taille.csv")
 
+
+colnames(roc_new) <- colnames(roc)
+roc <- roc_new
+rm(roc_new)
+
 #mise en forme du tableau roc à partir de roc sextant, des microK et de la taille
 roc$lobeD <- ifelse(roc$sextant %in% c("AD","MD","BD"),1,0)
-
 roc <- merge(roc, microk[ ,c("patient","sextants","microcancer")], by = c("patient","sextants"), all.x=T, all.y=F)
 roc <- merge(roc, size[ ,c("patient","sextants","taille_IRM")], by = c("patient","sextants"), all.x=T, all.y=F)
 roc$ADK_histo <- ifelse(roc$microcancer==1 & !is.na(roc$microcancer), 1, roc$ADK_histo)
@@ -31,14 +36,21 @@ roc_pat <- data.frame(roc %>% group_by(patient) %>% select(4:9) %>% summarise_ea
 saveRDS(roc_pat,"data/roc_pat.rds")
 
 
-
-
-
+#-------
+#verif 
+# roc_new <- read.csv2("data/tableau_pour_courbr_ROC2_sextant.csv")#tableau envoyé le 16/01/2017 par AL
+# roc <- read.csv2("data/ROC_sextant.csv") #premier tableau roc envoyé
+# colnames(roc_new) <- colnames(roc)
+# all.equal(roc_new,roc)
+# vT <- apply(roc_new==roc,1,sum)<7
+# roc_new[vT,]
+# roc[vT,]
+# #il y a des différences, je relance avec roc_new
 #----------------------------------
 
 #autres bases, non utilisees
 pstat <- read.csv2("data/prostate_stat.csv") 
-cst <- read.csv2("data/BPC_vs_BPST.csv")
+#cst <- read.csv2("data/BPC_vs_BPST.csv") #utilise mais loadé directement dans l'analyse car pas de dm
 roc_l <- read.csv2("data/ROC_lobe.csv")
 
 #data_magment sur tableau inutilise finalement

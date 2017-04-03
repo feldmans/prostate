@@ -121,7 +121,7 @@ write.table(print(kappa_tot),file="clipboard",sep="\t", row.names=F)
 # 
 
 #4- AUC estimation
-var <- colnames(roc1[-c(1:4,9)])
+#var <- colnames(roc1[-c(1:4,9)])
 
 get_rocobj <- function (data, var1, unit){
   #browser()
@@ -148,6 +148,8 @@ for (i in 1:3) {
   data_tmp <- get_threshold(data_tmp)
   data_tmp$patient <- as.character(data_tmp$patient)
   
+  var <- colnames(data_tmp)[grepl("DCE", colnames(data_tmp))]
+  
   .l <- lapply(var, function(x) get_rocobj(data=data_tmp, var1=x, unit=unit))
   
   if (unit=="patient"){
@@ -156,6 +158,7 @@ for (i in 1:3) {
   } else {
     dfAUC <- data.frame(variable=var, 
                         do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=2000, boot.stratified=FALSE)),3))))
+                        #do.call(rbind,lapply(4, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=2000, boot.stratified=FALSE)),3))))
   }
   dfAUC$auc.95CI <- paste0(dfAUC$X2, "[", dfAUC$X1, "-", dfAUC$X3, "]")
   dfAUC <- dfAUC[,c(1,5)]
@@ -173,6 +176,10 @@ for (i in 1:3) {
 
 write.table(print(tab), file="clipboard", sep ="\t")
 
+
+#tout sortir
+write.table(print(sesp),file="clipboard",sep="\t", row.names=F)
+write.table(print(kappa_tot),file="clipboard",sep="\t", row.names=F)
 
 #----------------------
 #Analyse complémentaire
