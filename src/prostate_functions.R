@@ -338,10 +338,11 @@ ckappa.cmarge <- function (r) {
   result
 }
 
+#ckappa.boot <- function(data,x) {ckappa(data[x,])[[2]]}
+ckappa.boot <- function(data, indices) {ckappa(data[indices, ])[[2]]}
 
 bootkapa.ci <- function(tmp, R=1000, type) {
-  #browser()
-  .bootres <- boot(data=tmp, ckappa.boot, R)
+  .bootres <- boot(data=tmp, ckappa.boot, R) #function(data,x) {ckappa(data[x,])[[2]]}
   .n <- length (.bootres$t0)
   if (all(na.omit(.bootres$t)==na.omit(.bootres$t)[1])) return(paste0(as.numeric (.bootres$t0), "[ND]"))
   .list.ci <- lapply(1:.n, function(x) boot.ci(.bootres,index=x,type=type))
@@ -359,3 +360,32 @@ bootkapa.ci <- function(tmp, R=1000, type) {
   return(.ans)
 }
 
+# get_rocobj <- function (data, var1, unit){
+#   #browser()
+#   #tryCatch({
+#   #if(var1=="AL_DCE1" & unit=="lobe") browser() 
+#     print(paste(var1, unit))
+#     data$vartmp <- data[,var1]
+#     gm1 <- glmer(ADK_histo ~ vartmp + (1 | patient), data = data,
+#                  family = binomial)
+#     # gm1 <- glmer(data$ADK_histo ~ data[ ,var1] + (1 | data$patient),
+#     #              family = binomial)
+#     p <- as.numeric(predict(gm1, type="response"))
+#     if (var1 %in% c("AL_DCE1", "AL_DCE0", "RP_DCE1", "RP_DCE0") & unit!="patient" ) rocobj <- roc(data$ADK_histo, p, smooth=TRUE)
+#     else rocobj <- roc(data$ADK_histo, p, smooth=FALSE)
+#   #}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+# }
+get_rocobj <- function (data, var1, unit){
+  #browser()
+  tryCatch({
+    print(var1)
+    data$vartmp <- data[,var1]
+    gm1 <- glmer(ADK_histo ~ vartmp + (1 | patient), data = data,
+                 family = binomial)
+    # gm1 <- glmer(data$ADK_histo ~ data[ ,var1] + (1 | data$patient),
+    #              family = binomial)
+    p <- as.numeric(predict(gm1, type="response"))
+    if (var1 %in% c("AL_DCE1", "AL_DCE0", "RP_DCE1", "RP_DCE0") & unit!="patient" ) rocobj <- roc(data$ADK_histo, p, smooth=TRUE)
+    else rocobj <- roc(data$ADK_histo, p, smooth=FALSE)
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}

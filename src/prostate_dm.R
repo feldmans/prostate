@@ -1,38 +1,63 @@
 source("src/prostate_libraries.R")
 
-roc <- read.csv2("data/ROC_sextant.csv") #premier tableau roc envoyé
-roc_new <- read.csv2("data/tableau_pour_courbr_ROC2_sextant.csv")#tableau envoyé le 16/01/2017 par AL
-microk <- read.csv2("data/microcancer.csv")
-size <- read.csv2("data/taille.csv")
 
+#-----------
+#ancienne version
 
-colnames(roc_new) <- colnames(roc)
-roc <- roc_new
-rm(roc_new)
+# # chargement
+#roc <- read.csv2("data/ROC_sextant.csv") #premier tableau roc envoyé
+#roc_new <- read.csv2("data/tableau_pour_courbr_ROC2_sextant.csv")#tableau envoyé le 16/01/2017 par AL
+# microk <- read.csv2("data/microcancer.csv")
+# size <- read.csv2("data/taille.csv")
 
-#mise en forme du tableau roc à partir de roc sextant, des microK et de la taille
+# # dm
+# colnames(roc_new) <- colnames(roc)
+# roc <- roc_new
+# rm(roc_new)
+# 
+# #mise en forme du tableau roc à partir de roc sextant, des microK et de la taille
+# roc$lobeD <- ifelse(roc$sextant %in% c("AD","MD","BD"),1,0)
+# roc <- merge(roc, microk[ ,c("patient","sextants","microcancer")], by = c("patient","sextants"), all.x=T, all.y=F)
+# roc <- merge(roc, size[ ,c("patient","sextants","taille_IRM")], by = c("patient","sextants"), all.x=T, all.y=F)
+# roc$ADK_histo <- ifelse(roc$microcancer==1 & !is.na(roc$microcancer), 1, roc$ADK_histo)
+# roc$taille_IRM <- ifelse(roc$microcancer==1 & !is.na(roc$microcancer), 4, roc$taille_IRM)
+# 
+# roc <- roc[,c(1,8,2:7,10)]
+# 
+# saveRDS(roc,"data/roc_sextant.rds")
+#----------
+#version 2017 04 07
+
+roc <- read.csv2("data/sextant_20170407.csv") 
+
+#dm fichier "data/sextant_20170407.csv"
+roc[roc$taille_IRM=="?", "taille_IRM"] <- NA
+roc$sextants <- as.character(roc$sextants)
+roc$taille_IRM <- as.numeric(as.character(roc$taille_IRM))
+roc$microcancer[is.na(roc$microcancer)] <- 0
 roc$lobeD <- ifelse(roc$sextant %in% c("AD","MD","BD"),1,0)
-roc <- merge(roc, microk[ ,c("patient","sextants","microcancer")], by = c("patient","sextants"), all.x=T, all.y=F)
-roc <- merge(roc, size[ ,c("patient","sextants","taille_IRM")], by = c("patient","sextants"), all.x=T, all.y=F)
-roc$ADK_histo <- ifelse(roc$microcancer==1 & !is.na(roc$microcancer), 1, roc$ADK_histo)
-roc$taille_IRM <- ifelse(roc$microcancer==1 & !is.na(roc$microcancer), 4, roc$taille_IRM)
 
-roc <- roc[,c(1,8,2:7,10)]
-
+#imputation taille IRM de "data/sextant_20170407.csv"
+roc %<>% left_join(roc %>% group_by(patient) %>% summarise(tmax = max(taille_IRM,na.rm=T))) %>%
+  mutate(taille_IRM=tmax) %>% select(-tmax)
 saveRDS(roc,"data/roc_sextant.rds")
 
-#TABLEAUX PRINCIPAUX (calculs de se sp)
-#recreation des tableaux lobe, sextant, patient à partir de roc_sextant
+
+#TABLEAUX lobe, sextant, patient (à partir de roc_sextant)
 
 #tableau sextant
 #deja cree
 
 #tableau lobe
-roc_lobe <- data.frame(roc %>% group_by(patient,lobeD) %>% select(4:9) %>% summarise_each(funs(max(.,na.rm=T))))
+roc_lobe <- data.frame(roc %>% group_by(patient,lobeD) %>% 
+                         select(ADK_histo, grep("_DCE",colnames(roc)), taille_IRM) %>%
+                         summarise_each(funs(max(.,na.rm=T))))
 saveRDS(roc_lobe,"data/roc_lobe.rds")
 
 #tableau patient
-roc_pat <- data.frame(roc %>% group_by(patient) %>% select(4:9) %>% summarise_each(funs(max(.,na.rm=T))))
+roc_pat <- data.frame(roc %>% group_by(patient) %>% 
+                        select(ADK_histo, grep("_DCE",colnames(roc)), taille_IRM) %>%
+                               summarise_each(funs(max(.,na.rm=T))))
 saveRDS(roc_pat,"data/roc_pat.rds")
 
 

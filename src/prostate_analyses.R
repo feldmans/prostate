@@ -3,19 +3,37 @@
 #############################
 
 source("src/prostate_libraries.R")
+source("src/prostate_functions.R")
 
 
-roc <- readRDS("data/roc_sextant.rds")
-roc_lobe <- readRDS("data/roc_lobe.rds")
-roc_pat <- readRDS("data/roc_pat.rds")
-#cst <- readRDS("data/cst.rds")
-#pstat <- readRDS("data/pstat.rds")
+# roc <- readRDS("data/roc_sextant.rds")
+# roc_lobe <- readRDS("data/roc_lobe.rds")
+# roc_pat <- readRDS("data/roc_pat.rds")
 
+#=======================================
+#DATA MANAGEMENT
 
-#Description
-head(pstat)
-head(roc)
-head(cst)
+roc <- read.csv2("data/sextant_20170407.csv") 
+roc[roc$taille_IRM=="?", "taille_IRM"] <- NA
+roc$taille_IRM <- as.numeric(as.character(roc$taille_IRM))
+roc$sextants <- as.character(roc$sextants)
+roc[is.na(roc$microcancer), "microcancer"] <- 0
+roc$lobeD <- ifelse(roc$sextant %in% c("AD","MD","BD"),1,0)
+#roc$taille_IRM <- ifelse (roc$microcancer == 1, 4, roc$taille_IRM) #NB : les microcancers sont-ils vus à l'IRM?
+
+#imputation taille IRM 
+roc %<>% left_join(roc %>% group_by(patient) %>% summarise(tmax = max(taille_IRM,na.rm=T))) %>% mutate(taille_IRM=tmax) %>% select(-tmax)
+
+#tableau sextant : roc 
+
+#tableau lobe
+roc_lobe <- data.frame(roc %>% group_by(patient,lobeD) %>% select(ADK_histo, grep("_DCE",colnames(roc)), taille_IRM) %>%
+                         summarise_each(funs(max(.,na.rm=T))))
+
+#tableau patient
+roc_pat <- data.frame(roc %>% group_by(patient) %>% select(ADK_histo, grep("_DCE",colnames(roc)), taille_IRM) %>%
+                        summarise_each(funs(max(.,na.rm=T))))
+#=============================
 
 #tableau roc
 #en histo, 3 patients n'ont pas de cancer, 34 patients ont un cancer, dont 21 patients sur un seul lobe et 13 patients sur les 2 lobes 
@@ -33,29 +51,335 @@ mean(roc$RP_DCE1)
 
 
 
-
-#Sensibilité_Specificité
-
-#fonctions utilisees:
+#fonctions utilisees pour Sensibilité_Specificité
 # get_threshold : 
 #   pour chaque variable dit si likert dépasse le seuil de 3 et seuil de 4
 # compute_se_sp :
 #   pour chaque variable dépassement du seuil 0/1, calcul Se et Sp par rapport à ADK_histo
 
-#1-choix de la taille de la tumeur
-#toute tailles
+
+
+#============================================
+#toutes tailles
+#1-choix de la taille de la tumeur et 0/1 selon seuil
 roc1 <- roc
 roc2 <- roc_lobe
 roc3 <- roc_pat
+
+#2-Calcul Se_sp et comparaison Se DCE0/DCE1
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3){
+  
+  .l <- lapply(c(3:4), function(seuil){
+    res <- compute_se_sp(.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  
+  sesp <- if (i==1) .l else rbind(sesp, .l)
+}
+
+sesp <- sesp %>% select(-N)
+
+
+#3-Cohen's Kappa
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3){
+  .l <- lapply(c(3:4), function(seuil){
+    res <- get_kappa_CI_conc (.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  kappa_tot <- if (i==1) .l else rbind(kappa_tot, .l)
+}
+
+
+#4- AUC estimation
+#var <- colnames(roc1[-c(1:4,9)])
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3) {
+  data_tmp <- get(df[i,"df"])
+  unit <- df[i,"unit"]
+  
+  data_tmp <- get_threshold(data_tmp)
+  data_tmp$patient <- as.character(data_tmp$patient)
+  
+  var <- colnames(data_tmp)[grepl("DCE", colnames(data_tmp))]
+  
+  #Calcul de l'objet roc
+  .l <- lapply(var, function(x) get_rocobj(data=data_tmp, var1=x, unit=unit))
+  
+  #intervalle de confiance
+  dfAUC <- data.frame(variable=var, 
+                      do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+    
+  # if (unit=="patient"){
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], boot.n=1000, boot.stratified=FALSE)),3))))
+  # } else {
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  #   #do.call(rbind,lapply(4, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  # }
+  dfAUC$auc.95CI <- paste0(dfAUC$X2, "[", dfAUC$X1, "-", dfAUC$X3, "]")
+  dfAUC <- dfAUC[,c("variable","auc.95CI")]
+  
+  #pvalue
+  impair.vec <- seq_along(.l)[seq_along(.l) %% 2 == 1]
+  pvalue <- sapply(impair.vec, function(x) roc.test(.l[[x]],.l[[x+1]], method="bootstrap", boot.n=1000)$p.value) #seq_along(.l)[seq_along(.l) %% 2 == 1] : 1  3  5  7  9 11
+  pvalue <- round(pvalue, 3)
+  
+  dfAUC$pvalue <- ""
+  dfAUC$pvalue[impair.vec] <- pvalue
+  
+  dfAUC$unit <- unit
+  dfAUC <- dfAUC[ ,c("unit", "variable", "auc.95CI", "pvalue")]
+  
+  if (i == 1 ) tab <- dfAUC
+  else tab <- rbind(tab, dfAUC)
+  
+  pdf(paste0("data/AUC_curve",unit,"1.pdf"))
+  par(mfrow=c(2,2))
+  for (i in 1:length(var)){
+    plot(.l[[i]], main = paste0(var[i],unit))
+  }
+  dev.off()
+}
+
+tabAUC <- tab
+
+write.xlsx(x = "toutes tailles", file = paste0("results/analyses_toutes_tailles_",Sys.Date(),".xlsx"), sheetName = "title", row.names = FALSE)
+write.xlsx(x = sesp, file = paste0("results/analyses_toutes_tailles_",Sys.Date(),".xlsx"), sheetName = "Se Sp", row.names = FALSE, append = TRUE)
+write.xlsx(x = kappa_tot, file = paste0("results/analyses_toutes_tailles_",Sys.Date(),".xlsx"), sheetName = "Kappa", row.names = FALSE, append=TRUE)
+write.xlsx(x = tabAUC, file = paste0("results/analyses_toutes_tailles_",Sys.Date(),".xlsx"), sheetName = "AUC", row.names = FALSE, append=TRUE)
+#============================================
 #taille >=5
+
+#1-choix de la taille de la tumeur et 0/1 selon seuil
 roc1 <- roc[roc$taille_IRM>=5 & !is.na(roc$taille_IRM), ]
 roc2 <- roc_lobe[roc_lobe$taille_IRM>=5 & !is.na(roc_lobe$taille_IRM), ]
 roc3 <- roc_pat[roc_pat$taille_IRM>=5 & !is.na(roc_pat$taille_IRM), ]
+
+#2-Calcul Se_sp et comparaison Se DCE0/DCE1
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3){
+  
+  .l <- lapply(c(3:4), function(seuil){
+    res <- compute_se_sp(.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  
+  sesp <- if (i==1) .l else rbind(sesp, .l)
+}
+
+sesp <- sesp %>% select(-N)
+
+
+#3-Cohen's Kappa
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3){
+  .l <- lapply(c(3:4), function(seuil){
+    res <- get_kappa_CI_conc (.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  kappa_tot <- if (i==1) .l else rbind(kappa_tot, .l)
+}
+
+
+
+#4- AUC estimation
+#var <- colnames(roc1[-c(1:4,9)])
+
+get_rocobj <- function (data, var1, unit){
+  #browser()
+  tryCatch({
+    print(var1)
+    data$vartmp <- data[,var1]
+    gm1 <- glmer(ADK_histo ~ vartmp + (1 | patient), data = data,
+                 family = binomial)
+    # gm1 <- glmer(data$ADK_histo ~ data[ ,var1] + (1 | data$patient),
+    #              family = binomial)
+    p <- as.numeric(predict(gm1, type="response"))
+    if (var1 %in% c("AL_DCE1", "AL_DCE0", "RP_DCE1", "RP_DCE0") & unit!="patient" ) rocobj <- roc(data$ADK_histo, p, smooth=TRUE)
+    else rocobj <- roc(data$ADK_histo, p, smooth=FALSE)
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1) {
+  data_tmp <- get(df[i,"df"])
+  unit <- df[i,"unit"]
+  
+  data_tmp <- get_threshold(data_tmp)
+  data_tmp$patient <- as.character(data_tmp$patient)
+  
+  var <- colnames(data_tmp)[grepl("DCE", colnames(data_tmp))]
+  
+  #Calcul de l'objet roc
+  .l <- lapply(var, function(x) get_rocobj(data=data_tmp, var1=x, unit=unit))
+  
+  #intervalle de confiance
+  dfAUC <- data.frame(variable=var, 
+                      do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  
+  # if (unit=="patient"){
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], boot.n=1000, boot.stratified=FALSE)),3))))
+  # } else {
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  #   #do.call(rbind,lapply(4, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  # }
+  dfAUC$auc.95CI <- paste0(dfAUC$X2, "[", dfAUC$X1, "-", dfAUC$X3, "]")
+  dfAUC <- dfAUC[,c("variable","auc.95CI")]
+  
+  #pvalue
+  impair.vec <- seq_along(.l)[seq_along(.l) %% 2 == 1]
+  pvalue <- sapply(impair.vec, function(x) roc.test(.l[[x]],.l[[x+1]], method="bootstrap", boot.n=1000)$p.value) #seq_along(.l)[seq_along(.l) %% 2 == 1] : 1  3  5  7  9 11
+  pvalue <- round(pvalue, 3)
+  dfAUC$pvalue <- NA
+  dfAUC$pvalue[impair.vec] <- pvalue
+  
+  dfAUC$unit <- unit
+  dfAUC <- dfAUC[ ,c("unit", "variable", "auc.95CI", "pvalue")]
+  
+  if (i == 1 ) tab <- dfAUC
+  else tab <- rbind(tab, dfAUC)
+  
+  pdf(paste0("data/AUC_curve",unit,"2.pdf"))
+  par(mfrow=c(2,2))
+  for (i in 1:length(var)){
+    plot(.l[[i]], main = paste0(var[i],unit))
+  }
+  dev.off()
+}
+
+tabAUC <- tab
+write.xlsx(x = "sup 5", file = paste0("results/analyses_sup5_",Sys.Date(),".xlsx"), sheetName = "title", row.names = FALSE)
+write.xlsx(x = sesp, file = paste0("results/analyses_sup5_",Sys.Date(),".xlsx"), sheetName = "Se Sp", row.names = FALSE, append = TRUE)
+write.xlsx(x = kappa_tot, file = paste0("results/analyses_sup5_",Sys.Date(),".xlsx"), sheetName = "Kappa", row.names = FALSE, append=TRUE)
+write.xlsx(x = tabAUC, file = paste0("results/analyses_sup5_",Sys.Date(),".xlsx"), sheetName = "AUC", row.names = FALSE, append=TRUE)
+
+#============================================
 #taille <10
+
+#1-choix de la taille de la tumeur et 0/1 selon seuil
 roc1 <- roc[roc$taille_IRM<10 & !is.na(roc$taille_IRM), ]
 roc2 <- roc_lobe[roc_lobe$taille_IRM<10 & !is.na(roc_lobe$taille_IRM), ]
 roc3 <- roc_pat[roc_pat$taille_IRM<10 & !is.na(roc_pat$taille_IRM), ]
+
+#2-Calcul Se_sp et comparaison Se DCE0/DCE1
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1){
+  
+  .l <- lapply(c(3:4), function(seuil){
+    res <- compute_se_sp(.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  
+  sesp <- if (i==1) .l else rbind(sesp, .l)
+}
+
+sesp <- sesp %>% select(-N)
+
+
+#3-Cohen's Kappa
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1:3){
+  .l <- lapply(c(3:4), function(seuil){
+    res <- get_kappa_CI_conc (.roc=get(df[i,"df"]), seuil, unit=df[i,"unit"], R=1000, type="bca") 
+  })
+  .l <- do.call(rbind, .l)
+  kappa_tot <- if (i==1) .l else rbind(kappa_tot, .l)
+}
+
+
+
+#4- AUC estimation
+#var <- colnames(roc1[-c(1:4,9)])
+
+
+
+
+df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
+
+for (i in 1) {
+  data_tmp <- get(df[i,"df"])
+  unit <- df[i,"unit"]
+  
+  data_tmp <- get_threshold(data_tmp)
+  data_tmp$patient <- as.character(data_tmp$patient)
+  
+  var <- colnames(data_tmp)[grepl("DCE", colnames(data_tmp))]
+  
+  #Calcul de l'objet roc
+  .l <- lapply(var, function(x) get_rocobj(data=data_tmp, var1=x, unit=unit))
+  #intervalle de confiance
+  dfAUC <- data.frame(variable=var, 
+                      do.call(rbind,lapply(1:12, function(x) {
+                        if(is.null(.l[[x]])) res <- c(NA, NA, NA)
+                        else  res <- round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3)
+                        return (res)
+                        })))
+  
+  # if (unit=="patient"){
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], boot.n=1000, boot.stratified=FALSE)),3))))
+  # } else {
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  #   #do.call(rbind,lapply(4, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  # }
+  dfAUC$auc.95CI <- paste0(dfAUC$X2, "[", dfAUC$X1, "-", dfAUC$X3, "]")
+  dfAUC <- dfAUC[,c("variable","auc.95CI")]
+  
+  #pvalue
+  impair.vec <- seq_along(.l)[seq_along(.l) %% 2 == 1]
+  pvalue <- sapply(impair.vec, function(x){
+    if(is.null(.l[[x]]) | is.null(.l[[x+1]])) res <- NA
+    else res <- roc.test(.l[[x]],.l[[x+1]], method="bootstrap", boot.n=1000)$p.value #seq_along(.l)[seq_along(.l) %% 2 == 1] : 1  3  5  7  9 11
+    return(res)
+  }) 
+  pvalue <- round(pvalue, 3)
+  dfAUC$pvalue <- NA
+  dfAUC$pvalue[impair.vec] <- pvalue
+  
+  dfAUC$unit <- unit
+  dfAUC <- dfAUC[ ,c("unit", "variable", "auc.95CI", "pvalue")]
+  
+  if (i == 1 ) tab <- dfAUC
+  else tab <- rbind(tab, dfAUC)
+  
+  pdf(paste0("data/AUC_curve",unit,"3.pdf"))
+  par(mfrow=c(2,2))
+  for (i in 1:length(var)){
+    plot(.l[[i]], main = paste0(var[i],unit))
+  }
+  dev.off()
+}
+
+tabAUC <- tab
+
+write.xlsx(x = "inf 10", file = paste0("results/analyses_inf10_",Sys.Date(),".xlsx"), sheetName = "Title", row.names = FALSE)
+write.xlsx(x = sesp, file = paste0("results/analyses_inf10_",Sys.Date(),".xlsx"), sheetName = "Se Sp", row.names = FALSE, append = TRUE)
+write.xlsx(x = kappa_tot, file = paste0("results/analyses_inf10_",Sys.Date(),".xlsx"), sheetName = "Kappa", row.names = FALSE, append=TRUE)
+write.xlsx(x = tabAUC, file = paste0("results/analyses_inf10_",Sys.Date(),".xlsx"), sheetName = "AUC", row.names = FALSE, append=TRUE)
+
+#============================================
 #taille >=10
+
+#1-choix de la taille de la tumeur et 0/1 selon seuil
 roc1 <- roc[roc$taille_IRM>=10 & !is.na(roc$taille_IRM), ]
 roc2 <- roc_lobe[roc_lobe$taille_IRM>=10 & !is.na(roc_lobe$taille_IRM), ]
 roc3 <- roc_pat[roc_pat$taille_IRM>=10 & !is.na(roc_pat$taille_IRM), ]
@@ -74,22 +398,6 @@ for (i in 1:3){
 }
 
 sesp <- sesp %>% select(-N)
-write.table(print(sesp),file="clipboard",sep="\t", row.names=F)
-
-# #sextant
-# sespbis <- lapply(3:4, function(x) compute_se_sp(roc1, seuil=x, unit="sextant", R=1000, type="bca")) #bca marche avec R=1000 mais pas 100
-# sespsext <- do.call(rbind,sespbis)
-# #lobe
-# sespbis <- lapply(3:4, function(x) compute_se_sp (roc2, seuil=x, unit="lobe", R=1000, type="bca"))
-# sesplobe <- do.call(rbind,sespbis)
-# #pat
-# sespbis <- lapply(3:4, function(x) compute_se_sp (roc3, seuil=x, unit="patient", R=1000, type="bca"))
-# sesppat <- do.call(rbind,sespbis)
-# write.table(print(rbind(sespsext,sesplobe,sesppat)),file="clipboard",sep="\t", row.names=F)
-
-
-
-
 
 
 #3-Cohen's Kappa
@@ -103,22 +411,8 @@ for (i in 1:3){
   .l <- do.call(rbind, .l)
   kappa_tot <- if (i==1) .l else rbind(kappa_tot, .l)
 }
-write.table(print(kappa_tot),file="clipboard",sep="\t", row.names=F)
 
-
-# #pstat
-# 
-# head(pstat)
-# table(table(pstat$patient)) #37 patients, tous ont info pour les 2 lobes 
-# table(table(pstat$Lobe))
-# pstat$LG_pos <- ifelse(pstat$Lobe=="G" & pstat$BP_positives==1,1,0)
-# pstat$LD_pos <- ifelse(pstat$Lobe=="D" & pstat$BP_positives==1,1,0)
-# tmp <- pstat[,c("patient","LG_pos","LD_pos")]
-# tmp2 <- tmp %>% group_by(patient) %>% summarise(LG_pos = max(LG_pos), LD_pos = max(LD_pos))
-# table(tmp2$LD_pos) #12 patients ont biopsie droitpositive
-# table(tmp2$LG_pos) #20 patients ont biopsie gauche positive
-# table(tmp2$LG_pos==1 & tmp2$LD_pos==1) #5patients sont positif pour lobe gauche et lobe droit
-# 
+kappa_tot <- kappa_tot
 
 #4- AUC estimation
 #var <- colnames(roc1[-c(1:4,9)])
@@ -126,22 +420,22 @@ write.table(print(kappa_tot),file="clipboard",sep="\t", row.names=F)
 get_rocobj <- function (data, var1, unit){
   #browser()
   tryCatch({
-  print(var1)
-  data$vartmp <- data[,var1]
-  gm1 <- glmer(ADK_histo ~ vartmp + (1 | patient), data = data,
-               family = binomial)
-  # gm1 <- glmer(data$ADK_histo ~ data[ ,var1] + (1 | data$patient),
-  #              family = binomial)
-  p <- as.numeric(predict(gm1, type="response"))
-  if (var1 %in% c("AL_DCE1", "AL_DCE0", "RP_DCE1", "RP_DCE0") & unit!="patient" ) rocobj <- roc(data$ADK_histo, p, smooth=TRUE)
-  else rocobj <- roc(data$ADK_histo, p, smooth=FALSE)
+    print(var1)
+    data$vartmp <- data[,var1]
+    gm1 <- glmer(ADK_histo ~ vartmp + (1 | patient), data = data,
+                 family = binomial)
+    # gm1 <- glmer(data$ADK_histo ~ data[ ,var1] + (1 | data$patient),
+    #              family = binomial)
+    p <- as.numeric(predict(gm1, type="response"))
+    if (var1 %in% c("AL_DCE1", "AL_DCE0", "RP_DCE1", "RP_DCE0") & unit!="patient" ) rocobj <- roc(data$ADK_histo, p, smooth=TRUE)
+    else rocobj <- roc(data$ADK_histo, p, smooth=FALSE)
   }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
 
 df <- data.frame(df = c("roc1", "roc2", "roc3"),unit=c("sextant","lobe","patient"), stringsAsFactors=FALSE)
 
-for (i in 1:3) {
+for (i in 1) {
   data_tmp <- get(df[i,"df"])
   unit <- df[i,"unit"]
   
@@ -150,23 +444,38 @@ for (i in 1:3) {
   
   var <- colnames(data_tmp)[grepl("DCE", colnames(data_tmp))]
   
+  #Calcul de l'objet roc
   .l <- lapply(var, function(x) get_rocobj(data=data_tmp, var1=x, unit=unit))
   
-  if (unit=="patient"){
-    dfAUC <- data.frame(variable=var, 
-                        do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], boot.n=2000, boot.stratified=FALSE)),3))))
-  } else {
-    dfAUC <- data.frame(variable=var, 
-                        do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=2000, boot.stratified=FALSE)),3))))
-                        #do.call(rbind,lapply(4, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=2000, boot.stratified=FALSE)),3))))
-  }
+  #intervalle de confiance
+  dfAUC <- data.frame(variable=var, 
+                      do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  
+  # if (unit=="patient"){
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], boot.n=1000, boot.stratified=FALSE)),3))))
+  # } else {
+  #   dfAUC <- data.frame(variable=var, 
+  #                       do.call(rbind,lapply(1:12, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  #   #do.call(rbind,lapply(4, function(x) round(as.numeric(ci.auc(.l[[x]], method="bootstrap", boot.n=1000, boot.stratified=FALSE)),3))))
+  # }
   dfAUC$auc.95CI <- paste0(dfAUC$X2, "[", dfAUC$X1, "-", dfAUC$X3, "]")
-  dfAUC <- dfAUC[,c(1,5)]
+  dfAUC <- dfAUC[,c("variable","auc.95CI")]
+  
+  #pvalue
+  impair.vec <- seq_along(.l)[seq_along(.l) %% 2 == 1]
+  pvalue <- sapply(impair.vec, function(x) roc.test(.l[[x]],.l[[x+1]], method="bootstrap", boot.n=1000)$p.value) #seq_along(.l)[seq_along(.l) %% 2 == 1] : 1  3  5  7  9 11
+  pvalue <- round(pvalue, 3)
+  dfAUC$pvalue <- NA
+  dfAUC$pvalue[impair.vec] <- pvalue
+  
   dfAUC$unit <- unit
-  if (i ==1 ) tab <- dfAUC
+  dfAUC <- dfAUC[ ,c("unit", "variable", "auc.95CI", "pvalue")]
+  
+  if (i == 1 ) tab <- dfAUC
   else tab <- rbind(tab, dfAUC)
   
-  pdf(paste0("data/AUC_curve",unit,".pdf"))
+  pdf(paste0("data/AUC_curve",unit,"4.pdf"))
   par(mfrow=c(2,2))
   for (i in 1:length(var)){
     plot(.l[[i]], main = paste0(var[i],unit))
@@ -174,12 +483,14 @@ for (i in 1:3) {
   dev.off()
 }
 
-write.table(print(tab), file="clipboard", sep ="\t")
+tabAUC <- tab
 
 
-#tout sortir
-write.table(print(sesp),file="clipboard",sep="\t", row.names=F)
-write.table(print(kappa_tot),file="clipboard",sep="\t", row.names=F)
+write.xlsx(x = "sup 10", file = paste0("results/analyses_sup10_",Sys.Date(),".xlsx"), sheetName = "Title", row.names = FALSE)
+write.xlsx(x = sesp, file = paste0("results/analyses_sup10_",Sys.Date(),".xlsx"), sheetName = "Se Sp", row.names = FALSE, append = TRUE)
+write.xlsx(x = kappa_tot, file = paste0("results/analyses_sup10_",Sys.Date(),".xlsx"), sheetName = "Kappa", row.names = FALSE, append=TRUE)
+write.xlsx(x = tabAUC, file = paste0("results/analyses_sup10_",Sys.Date(),".xlsx"), sheetName = "AUC", row.names = FALSE, append=TRUE)
+
 
 #----------------------
 #Analyse complémentaire
